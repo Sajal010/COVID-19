@@ -41,39 +41,38 @@ pdf(NULL)
 
 .nav-tabs-custom > .nav-tabs > li.active {border-top-color: #00ABC1}
 }
+
 </style>  
 
 
 ```{r data_func}
-dataSets <-function(){
-  deaths <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv")
-  confirmed <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv")
-  recovered <-read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_recovered_global.csv")
-  vaccinated <-read.csv("https://raw.githubusercontent.com/govex/COVID-19/master/data_tables/vaccine_data/global_data/time_series_covid19_vaccine_global.csv")
-  vaccineDose <- read.csv("https://raw.githubusercontent.com/govex/COVID-19/master/data_tables/vaccine_data/global_data/vaccine_data_global.csv")
-  
-  write.csv(deaths, file = "deaths.csv")
-  write.csv(confirmed, file = "confirmed.csv")
-  write.csv(recovered, file = "recovered.csv")
-  write.csv(vaccinated, file = "vaccinated.csv")
-  write.csv(vaccineDose, file = "vaccineDose.csv")
-  
-  flag = 1
-  
-  if(nrow(deaths) == 0 | nrow(confirmed) == 0 | nrow(confirmed == 0) | nrow(vaccinated) == 0){
-    deaths <- read.csv("deaths.csv")
-    confirmed <- read.csv("confirmed.csv")
-    recovered <-read.csv("recovered.csv")
-    vaccinated <-read.csv("vaccinated.csv")
-    vaccineDose <- read.csv("vaccineDose.csv")
-    flag= 2
-  }
-  
-  return(list(deaths = deaths, confirmed = confirmed, recovered = recovered, vaccinated = vaccinated, vaccineDose = vaccineDose,flag = flag))
+dataSets <- function(){
+  tryCatch(
+    {
+      deaths <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv")
+      confirmed <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv")
+      recovered <-read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_recovered_global.csv")
+      vaccinated <-read.csv("https://raw.githubusercontent.com/govex/COVID-19/master/data_tables/vaccine_data/global_data/time_series_covid19_vaccine_global.csv")
+      vaccineDose <- read.csv("https://raw.githubusercontent.com/govex/COVID-19/master/data_tables/vaccine_data/global_data/vaccine_data_global.csv")
+      
+      dataList <- list(deaths = deaths, confirmed = confirmed, recovered = recovered, vaccinated = vaccinated, vaccineDose = vaccineDose)
+      #save(dataList, file = "JHUData.RData")
+      return(dataList)
+    },
+    error=function(e) {
+      dataList <- readRDS(url("https://raw.githubusercontent.com/uchembaka/Data/main/JHUData.rds"))
+      return(dataList)
+    }
+  )
 }
 
 data <- dataSets()
-load("JHUCountries.RData")
+
+oldData <- readRDS(url("https://raw.githubusercontent.com/uchembaka/Data/main/JHUData.rds"))
+
+if(!pingr::is_online()) stop("No Internet Connection")
+
+load(url("https://raw.githubusercontent.com/uchembaka/Data/main/JHUCountries.RData"))
 
 death <- data[["deaths"]]
 confirmed <- data[["confirmed"]]
@@ -81,12 +80,17 @@ recovered <- data[["recovered"]]
 vaccinated <- data[["vaccinated"]]
 vaccineDose <- data[["vaccineDose"]]
 
+## Detect change in data structure 
+"%!in%" <-Negate("%in%")
+if( c("Province.State", "Lat", "Long") %!in% colnames(death[1:10]) ){
+  data <- oldData
+}
 
-death <- death[,-c(1,2,4,5)]
-confirmed <- confirmed[,-c(1,2,4,5)]
-recovered <- recovered[,-c(1,2,4,5)]
-vaccinated <- vaccinated[,-8]
-vaccineDose <- vaccineDose[,-c(1,2,4,8)]
+death <- within(death, rm(X, Province.State, Lat, Long))
+confirmed <- within(confirmed, rm(X, Province.State, Lat, Long))
+recovered <- within(recovered, rm(X, Province.State, Lat, Long))
+vaccinated <- within(vaccinated, rm(Report_Date_String,UID, Province_State))
+vaccineDose <- within(vaccineDose, rm(Report_Date_String, Date, UID, Province_State))
 
 death <- aggregate(.~Country.Region, death, sum) # sum cases by country
 confirmed <- aggregate(.~Country.Region, confirmed, sum) 
@@ -274,9 +278,9 @@ Row
 
 <center><img src="https://media.giphy.com/media/qXrwBfuNerpM6HNKnc/giphy.gif" width="600" height="400"></center>
 
+
 Covid Infection
 =====================
-
 
 Inputs {.sidebar data-padding=10}
 ---------------------
@@ -372,6 +376,7 @@ Changes in reporting policy and/or lack of data can cause unusual spikes in plot
 1) The US stopped reporting data of recovered cases from 13th December 2020
 2) Ireland stopped reporting daily data due to health department (HSE) hack.
 
+
 Row 
 ---------------------
 
@@ -435,6 +440,8 @@ renderValueBox({
   valueBox("Number of Deaths (Filter)", value = prettyNum(totalDeath ,big.mark = ",") , color = "#AA0000",icon = "fa-ambulance")
 })
 ```
+
+
 
 
 <style>
@@ -693,7 +700,7 @@ Row {.tabset .tabset-fade}
 
 ```{r}
 renderPlotly({
-  gVaccineData <- aggregate(.~Date, vaccinated[-c(1,2,7,8,9)],sum)
+  gVaccineData <- aggregate(.~Date, vaccinated[-1],sum)
   fig <- plot_ly(y=~gVaccineData$Doses_admin, x=~as.Date(gVaccineData$Date), type = "scatter", mode = "lines", fill="tozeroy", name = "Total")
   fig <- fig%>% add_trace(y=~gVaccineData$People_partially_vaccinated, x=~as.Date(gVaccineData$Date),  fill="tozeroy", name = "First Dose")
     fig <- fig%>% add_trace(y=~gVaccineData$People_fully_vaccinated, x=~as.Date(gVaccineData$Date),  fill="tozeroy", name = "Complete Dose")
@@ -738,33 +745,23 @@ Row {data-height=1000}
 -------------------------------------
 ```{r}
 renderPlotly({
+
   if(input$map == "Confirmed Cases"){
-    fig <- plot_geo(mapDataCases, type='choropleth', locations=mapDataCases$iso3, z=mapDataCases$Confirmed, text=mapDataCases$Country, colors="Purples") %>% 
-   layout(title = paste0("<br> <br> World map showing no. of <br>",input$map)) %>% 
-    colorbar(title = paste0("No. of ",input$map))
+    fig <- plot_geo(mapDataCases, type='choropleth', locations=mapDataCases$iso3, z=mapDataCases$Confirmed, text=mapDataCases$Country, colors="Purples")
   }else if(input$map == "Deaths"){
-    fig <- plot_geo(mapDataCases, type='choropleth', locations=mapDataCases$iso3, z=mapDataCases$Deaths, text=mapDataCases$Country, colorscale="Inferno") %>% 
-   layout(title = paste0("<br> <br> World map showing no. of <br>",input$map)) %>% 
-    colorbar(title = paste0("No. of ",input$map))
+    fig <- plot_geo(mapDataCases, type='choropleth', locations=mapDataCases$iso3, z=mapDataCases$Deaths, text=mapDataCases$Country, colorscale="Inferno")
   }else if(input$map == "Recoveries"){
-    fig <- plot_geo(mapDataCases, type='choropleth', locations=mapDataCases$iso3, z=mapDataCases$Recovered, text=mapDataCases$Country, colors="YlGn") %>% 
-   layout(title = paste0("<br> <br> World map showing no. of <br>",input$map)) %>% 
-    colorbar(title = paste0("No. of ",input$map))
+    fig <- plot_geo(mapDataCases, type='choropleth', locations=mapDataCases$iso3, z=mapDataCases$Recovered, text=mapDataCases$Country, colors="YlGn")
   }else if(input$map == "Vaccination (Total Doses)"){
-    fig <- plot_geo(mapDataVaccines, type='choropleth', locations=mapDataVaccines$iso3, z=mapDataVaccines$Doses_admin, text=mapDataVaccines$Country, colors="BuGn") %>% 
-   layout(title = paste0("<br> <br> World map showing no. of <br>",input$map)) %>% 
-    colorbar(title = paste0("No. of ",input$map))
+    fig <- plot_geo(mapDataVaccines, type='choropleth', locations=mapDataVaccines$iso3, z=mapDataVaccines$Doses_admin, text=mapDataVaccines$Country, colors="BuGn")
   }else if(input$map == "Vaccination (First Dose)"){
-    fig <- plot_geo(mapDataVaccines, type='choropleth', locations=mapDataVaccines$iso3, z=mapDataVaccines$People_partially_vaccinated, text=mapDataVaccines$Country, colors="YlGn") %>% 
-   layout(title = paste0("<br> <br> World map showing no. of <br>",input$map)) %>% 
-    colorbar(title = paste0("No. of ",input$map))
+    fig <- plot_geo(mapDataVaccines, type='choropleth', locations=mapDataVaccines$iso3, z=mapDataVaccines$People_partially_vaccinated, text=mapDataVaccines$Country, colors="YlGn")
   }else{
-    fig <- plot_geo(mapDataVaccines, type='choropleth', locations=mapDataVaccines$iso3, z=mapDataVaccines$People_fully_vaccinated, text=mapDataVaccines$Country, colors="BuGn") %>% 
-   layout(title = paste0("<br> <br> World map showing no. of <br>",input$map)) %>% 
-    colorbar(title = paste0("No. of ",input$map))
+    fig <- plot_geo(mapDataVaccines, type='choropleth', locations=mapDataVaccines$iso3, z=mapDataVaccines$People_fully_vaccinated, text=mapDataVaccines$Country, colors="BuGn")
   }
   #fig <- plot_geo(mapDataCases, type='choropleth', locations=mapDataCases$iso3, z=mapDataCases$Deaths, text=mapDataCases$Country, colorscale="Inferno")
-  fig <-fig %>% config(displayModeBar = F) %>% layout(height = 950)
+  fig <-fig %>% config(displayModeBar = F) %>% layout(height = 950, title = paste0("<br> <br>",input$map))%>% 
+    colorbar(title = paste0("No. of ",input$map))
   fig
 })
 ```
@@ -917,3 +914,4 @@ Sajal Kaur Minhas (sajal.minhas@ucdconnect.ie), 2nd year PhD Student in Universi
 
 #### **Code**
 The code to this Shiny app 'Covid- 19 Tracker' is available on [GitHub](https://github.com/Sajal010/COVID-19).
+

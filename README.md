@@ -37,4 +37,4 @@ Sajal Kaur Minhas (sajal.minhas@ucdconnect.ie), 2nd year PhD Student in Universi
 ***
 
 #### **Code**
-The code to this Shiny app 'Covid- 19 Tracker' is available on GitHub.
+The code to this Shiny app 'Covid- 19 Tracker' is available on [GitHub](https://github.com/Sajal010/COVID-19).

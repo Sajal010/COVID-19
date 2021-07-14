@@ -741,11 +741,35 @@ radioButtons(
 )
 ```
 
-Row {data-height=1000}
+Row
 -------------------------------------
 ```{r}
 renderPlotly({
-
+  g <- list(
+  scope = "world",
+  showland = TRUE,
+  landcolor = toRGB("grey83"),
+  subunitcolor = toRGB("white"),
+  countrycolor = toRGB("white"),
+  showlakes = TRUE,
+  lakecolor = toRGB("white"),
+  showsubunits = TRUE,
+  showcountries = TRUE,
+  framecolor= "#fff",
+  resolution = 110,
+  projection = list(
+    type = 'equirectangular'
+  ),
+  lonaxis = list(
+    showgrid = TRUE,
+    gridwidth = 0.5
+  ),
+  lataxis = list(
+    showgrid = TRUE,
+    gridwidth = 0.5
+  )
+)
+  
   if(input$map == "Confirmed Cases"){
     fig <- plot_geo(mapDataCases, type='choropleth', locations=mapDataCases$iso3, z=mapDataCases$Confirmed, text=mapDataCases$Country, colors="Purples")
   }else if(input$map == "Deaths"){
@@ -760,8 +784,9 @@ renderPlotly({
     fig <- plot_geo(mapDataVaccines, type='choropleth', locations=mapDataVaccines$iso3, z=mapDataVaccines$People_fully_vaccinated, text=mapDataVaccines$Country, colors="BuGn")
   }
   #fig <- plot_geo(mapDataCases, type='choropleth', locations=mapDataCases$iso3, z=mapDataCases$Deaths, text=mapDataCases$Country, colorscale="Inferno")
-  fig <-fig %>% config(displayModeBar = F) %>% layout(height = 950, title = paste0("<br> <br>",input$map))%>% 
-    colorbar(title = paste0("No. of ",input$map))
+  fig <-fig %>% config(displayModeBar = F) %>% layout(height = 943, width = 1630, title = paste0("<br> <br>",input$map), 
+                                                        geo = g)%>% 
+    colorbar(title = paste0("No. of ",input$map)) 
   fig
 })
 ```

@@ -60,7 +60,7 @@ dataSets <- function(){
       return(dataList)
     },
     error=function(e) {
-      dataList <- readRDS(url("https://raw.githubusercontent.com/uchembaka/Data/main/JHUData.rds"))
+      dataList <- readRDS(url("https://raw.githubusercontent.com/Sajal010/COVID-19/master/Data/JHUData.rds"))
       return(dataList)
     }
   )
@@ -68,11 +68,11 @@ dataSets <- function(){
 
 data <- dataSets()
 
-oldData <- readRDS(url("https://raw.githubusercontent.com/uchembaka/Data/main/JHUData.rds"))
+oldData <- readRDS(url("https://raw.githubusercontent.com/Sajal010/COVID-19/master/Data/JHUData.rds"))
 
 if(!pingr::is_online()) stop("No Internet Connection")
 
-load(url("https://raw.githubusercontent.com/uchembaka/Data/main/JHUCountries.RData"))
+load(url("https://raw.githubusercontent.com/Sajal010/COVID-19/master/Data/JHUCountries.RData"))
 
 death <- data[["deaths"]]
 confirmed <- data[["confirmed"]]

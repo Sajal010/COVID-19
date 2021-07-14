@@ -1,0 +1,919 @@
+---
+title: "COVID Dashboard"
+runtime: shiny
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: row
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(shiny)
+library(plotly)
+library(lubridate)
+library(tidyverse)
+library(DT)
+library(wordcloud)
+library(RColorBrewer)
+library(scales)
+pdf(NULL)
+```
+
+<style>                     
+.navbar {
+  background-color:#1A425D;
+  border-color:#1A425D;
+}
+.section.sidebar {
+  background-color: #627684;
+  color:white;
+
+}
+
+.navbar .navbar-nav > .active > a,
+.navbar .navbar-nav > .active > a:hover,
+.navbar .navbar-nav > .active > a:focus,
+.navbar .navbar-nav > li > a:hover,
+.navbar .navbar-nav > li > a:focus{
+    background: #00ABC1;
+}
+
+.nav-tabs-custom > .nav-tabs > li.active {border-top-color: #00ABC1}
+}
+</style>  
+
+
+```{r data_func}
+dataSets <-function(){
+  deaths <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv")
+  confirmed <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv")
+  recovered <-read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_recovered_global.csv")
+  vaccinated <-read.csv("https://raw.githubusercontent.com/govex/COVID-19/master/data_tables/vaccine_data/global_data/time_series_covid19_vaccine_global.csv")
+  vaccineDose <- read.csv("https://raw.githubusercontent.com/govex/COVID-19/master/data_tables/vaccine_data/global_data/vaccine_data_global.csv")
+  
+  write.csv(deaths, file = "deaths.csv")
+  write.csv(confirmed, file = "confirmed.csv")
+  write.csv(recovered, file = "recovered.csv")
+  write.csv(vaccinated, file = "vaccinated.csv")
+  write.csv(vaccineDose, file = "vaccineDose.csv")
+  
+  flag = 1
+  
+  if(nrow(deaths) == 0 | nrow(confirmed) == 0 | nrow(confirmed == 0) | nrow(vaccinated) == 0){
+    deaths <- read.csv("deaths.csv")
+    confirmed <- read.csv("confirmed.csv")
+    recovered <-read.csv("recovered.csv")
+    vaccinated <-read.csv("vaccinated.csv")
+    vaccineDose <- read.csv("vaccineDose.csv")
+    flag= 2
+  }
+  
+  return(list(deaths = deaths, confirmed = confirmed, recovered = recovered, vaccinated = vaccinated, vaccineDose = vaccineDose,flag = flag))
+}
+
+data <- dataSets()
+load("JHUCountries.RData")
+
+death <- data[["deaths"]]
+confirmed <- data[["confirmed"]]
+recovered <- data[["recovered"]]
+vaccinated <- data[["vaccinated"]]
+vaccineDose <- data[["vaccineDose"]]
+
+
+death <- death[,-c(1,2,4,5)]
+confirmed <- confirmed[,-c(1,2,4,5)]
+recovered <- recovered[,-c(1,2,4,5)]
+vaccinated <- vaccinated[,-8]
+vaccineDose <- vaccineDose[,-c(1,2,4,8)]
+
+death <- aggregate(.~Country.Region, death, sum) # sum cases by country
+confirmed <- aggregate(.~Country.Region, confirmed, sum) 
+recovered <- aggregate(.~Country.Region, recovered, sum)
+vaccineDose <- aggregate(.~Country_Region, vaccineDose, sum)
+
+colnames(death) <- colnames(confirmed) <- colnames(recovered) <- c("Country.Region",as.character(as.Date(str_replace(colnames(death[-1]),"X",""), "%m.%d.%y")))
+
+
+lastDate <- as.Date(names(confirmed[ncol(confirmed)]))
+
+mapDataCases <- cbind(confirmed$Country.Region, confirmed[as.character(lastDate)],
+                      death[as.character(lastDate)], recovered[as.character(lastDate)])
+colnames(mapDataCases) <- c("Country", "Confirmed", "Deaths", "Recovered")
+iso <- countryRef[c("iso3", "Country_Region")]; iso<- iso[!duplicated(iso),]
+mapDataCases <- merge(mapDataCases, iso, by.x = "Country", by.y = "Country_Region")
+mapDataCases <- subset(mapDataCases, iso3 != "")
+
+mapDataVaccines <- vaccineDose
+isoV <- countryRef[c("iso3", "Country_Region")]; isoV<- isoV[!duplicated(isoV),]
+mapDataVaccines <- merge(mapDataVaccines, isoV, by = "Country_Region")
+mapDataVaccines <- subset(mapDataVaccines, iso3 != "")
+
+getDaily <- function(data = death, country="Global"){
+  tData <-data.frame(t(data[-1]))
+  colnames(tData) <- data[,1]
+  tData$Date <- as.Date(rownames(tData))
+  rownames(tData) <- NULL
+  if(country == "Global"){
+    tData$Global <- rowSums(tData[-ncol(tData)])
+  }else{
+    tData <- tData[, c("Date", country)]
+  }
+  
+  tData$DailyCount <- c(tData$Global[1], diff(tData$Global))
+  tData$year <- year(tData$Date)
+  tData$month <- month(tData$Date, label = T, abbr = F)
+  return(tData)
+}
+
+```
+
+```{r reactive}
+# Filter by input dataframe
+dataReactiveDeath.1 <- reactive({
+  df <- death %>% 
+    filter(Country.Region %in% input$countrySelect) %>%
+    select(matches(paste(input$yearCheckBox, collapse = "|")))
+  return(df)
+})
+
+dataReactiveRecovered.1 <- reactive({
+  df <- recovered %>% 
+    filter(Country.Region %in% input$countrySelect) %>%
+    select(matches(paste(input$yearCheckBox, collapse = "|")))
+  return(df)
+})
+
+dataReactiveConfirmed.1 <- reactive({
+  df <- confirmed %>% 
+    filter(Country.Region %in% input$countrySelect) %>%
+    select(matches(paste(input$yearCheckBox, collapse = "|")))
+  return(df)
+})
+
+
+
+
+dataReactiveDeath.2 <- reactive({
+  df <- getDaily(data = death) %>% 
+    filter(year %in% input$yearCheckBox) %>%
+
+    select(c("Date", "year", "month", input$countrySelect)) %>%
+    mutate(Global = rowSums(select(., input$countrySelect))) %>%
+    mutate(DailyCount = c(Global[1], diff(Global)) )
+  return(df)
+})
+
+
+dataReactiveRecovered.2 <- reactive({
+  df <- getDaily(data = recovered) %>% 
+    filter(year %in% input$yearCheckBox) %>%
+    select(c("Date", "year", "month", input$countrySelect)) %>%
+    mutate(Global = rowSums(select(., input$countrySelect))) %>%
+    mutate(DailyCount = c(Global[1], diff(Global)) )
+  return(df)
+})
+
+dataReactiveConfirmed.2 <- reactive({
+  df <- getDaily(data = confirmed) %>% 
+    filter(year %in% input$yearCheckBox) %>%
+    select(c("Date", "year", "month", input$countrySelect)) %>%
+    mutate(Global = rowSums(select(., input$countrySelect))) %>%
+    mutate(DailyCount = c(Global[1], diff(Global)) )
+  return(df)
+})
+
+
+dataReactiveVaccineDose <- reactive({
+  df <- vaccineDose %>% 
+    filter(Country_Region %in% input$countrySelect)
+  return(df)
+})
+
+dataReactiveVaccineDose.2 <- reactive({
+  df <- vaccineDose %>% 
+    filter(Country_Region == input$singleCountry)
+  return(df)
+})
+
+dataReactiveVaccines <- reactive({
+  df <- vaccinated %>%
+    filter(Country_Region == input$singleCountry)
+  return(df)
+})
+
+
+
+
+### DT
+dataReactiveDeathDT <- reactive({
+  df <- getDaily(data = death) %>% 
+    #filter(year %in% input$yearCheckBox2) %>%
+    select(c("Date", "year", "month", input$countrySelect2)) %>%
+    mutate(Global = rowSums(select(., input$countrySelect2))) %>%
+    mutate(DailyCount = c(Global[1], diff(Global)) )
+  return(df)
+})
+
+
+dataReactiveRecoveredDT <- reactive({
+  df <- getDaily(data = recovered) %>% 
+    #filter(year %in% input$yearCheckBox2) %>%
+    select(c("Date", "year", "month", input$countrySelect2)) %>%
+    mutate(Global = rowSums(select(., input$countrySelect2))) %>%
+    mutate(DailyCount = c(Global[1], diff(Global)) )
+  return(df)
+})
+
+dataReactiveConfirmedDT <- reactive({
+  df <- getDaily(data = confirmed) %>% 
+    #filter(year %in% input$yearCheckBox2) %>%
+    select(c("Date", "year", "month", input$countrySelect2)) %>%
+    mutate(Global = rowSums(select(., input$countrySelect2))) %>%
+    mutate(DailyCount = c(Global[1], diff(Global)) )
+  return(df)
+})
+
+dataReactiveVaccineDoseDT <- reactive({
+  df <- vaccineDose %>% 
+    filter(Country_Region %in% input$countrySelect2)
+  return(df)
+})
+
+```
+
+Quick Start
+=====================
+
+
+<h2 style="text-align: center;"><strong> <font size="+20"> <p style="color:#627684"> Covid-19 Tracker (Vaccinations + Cases)</p> </font></strong></h2>
+
+Row
+---------------------
+
+### Guide {data-padding=20}
+
+**Welcome to the 'Covid-19 Tracker' App**
+
+1. **The app consists of 3 data visualization pages (Covid Infection, Vaccination and Map) and 1 data table page **
+
+2. **In the ‘Covid Infection’ tab, various logistics related to selected country/countries like no. of confirmed cases/recovered cases/deaths globally/selected countries are shown. Also, graphs of daily confirmed cases/deaths/recoveries, cumulative confirmed cases/deaths cases/recovered cases and cases/mortality by country can be seen.**
+
+3. **The "Quick Selections" dropdown menu present in Covid Infection and Data Table tabs, allow for easy selection of countries based on region or sub-region (See notes in both pages)**
+
+4. **Similarly, for the ‘Vaccination’ tab you can get the logistics globally or for the selected country** 
+
+5. **In the ‘Map’ tab, the world map will show logistics for confirmed cases, recovered cases, deaths, total vaccinated/first dose/second dose people for most countries in the world.**
+
+6. **The 'Data Table' tab shows data for daily deaths, recoveries and confirmed cases. The table for vaccination is the country cumulative.**
+
+***Have fun. To get started, click on the ‘Covid Infection’ tab.***
+
+### Video
+
+<center><img src="https://media.giphy.com/media/qXrwBfuNerpM6HNKnc/giphy.gif" width="600" height="400"></center>
+
+Covid Infection
+=====================
+
+
+Inputs {.sidebar data-padding=10}
+---------------------
+
+#### **Note** 
+
+Oversea territories are listed under the main countries. e.g Saint Martin (South America) is under France hence, France will appear under Americas.
+
+#### **Countries** 
+
+```{r}
+uniqueRegions <- unique(countryRef$region)
+uniqueSubRegions <- unique(countryRef$sub.region)
+allCountries <- unique(countryRef$Country_Region)
+quickInputs <- c( "Ireland", "Global", "Top 20", uniqueRegions, uniqueSubRegions)
+selectInput("quickSelect",
+          "Quick Selections:",
+          choices = quickInputs,
+          selectize = F,
+          selected = "Ireland"
+          )
+```
+
+```{r country}
+
+topCountries.20 <- cbind(confirmed$Country.Region, confirmed[ncol(confirmed)], death[ncol(death)], recovered[ncol(recovered)])
+colnames(topCountries.20) <- c("Country", "confirmed", "death", "recovered")
+topCountries.20 <- topCountries.20[order(topCountries.20[,2], topCountries.20[,3], topCountries.20[,4], decreasing = T),]
+topCountries.20 <- topCountries.20[1:20,1]
+
+countryFlag <- reactive({
+  if(input$quickSelect == "Global"){
+    selectCountries <- sort(unique(confirmed$Country.Region))
+  }else if(input$quickSelect == "Ireland"){
+    selectCountries <- "Ireland"
+  }else if(input$quickSelect %in% unique(countryRef$region)){
+    selectCountries <- countryRef[which(countryRef$region %in% input$quickSelect), "Country_Region"]
+  }else if (input$quickSelect %in% unique(countryRef$sub.region)){
+    selectCountries <- countryRef[which(countryRef$sub.region %in% input$quickSelect), "Country_Region"]
+  }else if(input$quickSelect == "Top 20"){
+    selectCountries <- topCountries.20
+  }else{
+    selectCountries <- "Ireland"
+  }
+  return(selectCountries)
+})
+
+renderUI({
+  selectInput("countrySelect",
+            "Countries:",
+            choices = sort(unique(confirmed$Country.Region)),
+            multiple = T,
+            selectize = T,
+            selected = countryFlag()
+            )
+})
+
+```
+
+<hr/>
+
+```{r}
+radioButtons(
+  "cumulative",
+  "Log Cumulative:",
+  choices = c("Yes","No"),
+  selected = "No",
+  inline = T
+)
+```
+
+<hr/>
+
+#### **Date** 
+
+```{r date_added}
+checkboxGroupInput("yearCheckBox",
+                   "Year:",
+                   choices = sort(unique(getDaily()$year)),
+                   selected = sort(unique(getDaily()$year)),
+                   inline = T
+                   )
+
+```
+
+***
+
+#### **Note** 
+
+Data reported are subject to countries specific testing policy and capacity.
+Changes in reporting policy and/or lack of data can cause unusual spikes in plot. Examples include:
+
+1) The US stopped reporting data of recovered cases from 13th December 2020
+2) Ireland stopped reporting daily data due to health department (HSE) hack.
+
+Row 
+---------------------
+
+###
+
+```{r}
+renderValueBox({
+  totalConfirmed <- sum(colSums(confirmed[ncol(confirmed)]))
+  valueBox("Number of Confirmed Cases", value = prettyNum(totalConfirmed ,big.mark = ","), color = "black")
+})
+```
+
+
+###
+
+```{r}
+renderValueBox({
+  totalRecovered<- sum(colSums(recovered[ncol(recovered)]))
+  valueBox("Number of Recovered Cases", value = prettyNum(totalRecovered, big.mark = ","), color = "#008076",icon = "fa-heartbeat")
+})
+```
+
+###
+
+```{r}
+renderValueBox({
+  totalDeath <- sum(colSums(death[ncol(death)]))
+  valueBox("Number of Deaths", value = prettyNum(totalDeath ,big.mark = ",") , color = "#AA0000",icon = "fa-ambulance")
+})
+```
+
+
+Row 
+---------------------
+
+
+###
+
+```{r}
+renderValueBox({
+  totalConfirmed <- sum(colSums(dataReactiveConfirmed.1()[ncol(dataReactiveConfirmed.1())]))
+  valueBox("Number of Confirmed Cases (Filter)", value = prettyNum(totalConfirmed ,big.mark = ","), color = "black")
+})
+```
+
+
+###
+
+```{r}
+renderValueBox({
+  totalRecovered<- sum(colSums(dataReactiveRecovered.1()[ncol(dataReactiveRecovered.1())]))
+  valueBox("Number of Recovered Cases (Filter)", value = prettyNum(totalRecovered, big.mark = ","), color = "#008076",icon = "fa-heartbeat")
+})
+```
+
+###
+
+```{r}
+renderValueBox({
+  totalDeath <- sum(colSums(dataReactiveDeath.1()[ncol(dataReactiveDeath.1())]))
+  valueBox("Number of Deaths (Filter)", value = prettyNum(totalDeath ,big.mark = ",") , color = "#AA0000",icon = "fa-ambulance")
+})
+```
+
+
+<style>
+
+    .storyboard-nav .sbframelist {
+        margin: 0 auto;
+        width: 94%;
+        height: 60px;
+        overflow: hidden;
+        text-shadow: none;
+        margin-bottom: 8px;
+    }
+
+    .storyboard-nav .sbnext, .storyboard-nav .sbprev {
+
+        width: 2%;
+        height: 60px;
+        font-size: 50px;
+    }
+    
+    .storyboard-nav .sbframelist ul li.active {
+      color: #fff;
+      background: #21B96D;
+    }
+        
+
+</style>
+
+Row {.tabset .tabset-fade}
+--------------------------
+
+### **Daily Confirmed Cases**
+
+
+```{r}
+renderPlotly({
+  
+  
+  fig <- plot_ly(y=~dataReactiveConfirmed.2()$DailyCount, x=~dataReactiveConfirmed.2()$Date, type = "scatter", mode = "lines", fill="tozeroy")
+  fig <- fig %>% layout(xaxis = list(title = 'Date'),
+           yaxis = list(title = 'Deaths'))
+  
+})
+```
+
+### **Daily Deaths**
+
+```{r}
+renderPlotly({
+  
+  fig <- plot_ly(y=~dataReactiveDeath.2()$DailyCount, x=~dataReactiveDeath.2()$Date, type = "scatter", mode = "lines", fill="tozeroy")
+  fig <- fig %>% layout(xaxis = list(title = 'Date'),
+         yaxis = list(title = 'Deaths'))
+})
+```
+
+### **Daily Recoveries**
+
+```{r}
+renderPlotly({
+  
+  fig <- plot_ly(y=~dataReactiveRecovered.2()$DailyCount, x=~dataReactiveRecovered.2()$Date, type = "scatter", mode = "lines", fill="tozeroy")
+  fig <- fig %>% layout(xaxis = list(title = 'Date'),
+         yaxis = list(title = 'Recoveries'))
+})
+```
+
+### **Cumulative Confirmed Cases**
+
+```{r}
+renderPlotly({
+  Cs2plot <- input$countrySelect
+  fig <- plot_ly() %>% 
+    layout(xaxis = list(title = 'Date'), yaxis = list(title = 'Confirmed Cases'))
+  if(input$cumulative == "Yes"){
+      for (i in Cs2plot) {
+        fig <- fig %>% add_trace(x = dataReactiveConfirmed.2()$Date, y = log(dataReactiveConfirmed.2()[[i]]), name = i, mode = "line", type = "scatter")
+      }
+  }else{
+      for (i in Cs2plot) {
+        fig <- fig %>% add_trace(x = dataReactiveConfirmed.2()$Date, y = dataReactiveConfirmed.2()[[i]], name = i, mode = "line", type = "scatter")
+      }
+  }
+
+  fig
+})
+```
+
+### **Cumulative Deaths**
+
+```{r}
+renderPlotly({
+  
+  Cs2plot <- input$countrySelect
+  fig <- plot_ly() %>% 
+    layout(xaxis = list(title = 'Date'), yaxis = list(title = 'Deaths'))
+  if(input$cumulative == "Yes"){
+    for (i in Cs2plot) {
+      fig <- fig %>% add_trace(x = dataReactiveDeath.2()$Date, y = log(dataReactiveDeath.2()[[i]]), name = i, mode = "line", type = "scatter")
+    }
+  }else{
+    for (i in Cs2plot) {
+      fig <- fig %>% add_trace(x = dataReactiveDeath.2()$Date, y = dataReactiveDeath.2()[[i]], name = i, mode = "line", type = "scatter")
+    }
+  }
+
+  fig
+})
+```
+
+### **Cumulative Recovered Cases**
+
+```{r}
+renderPlotly({
+  
+  Cs2plot <- input$countrySelect
+  fig <- plot_ly() %>% 
+    layout(xaxis = list(title = 'Date'), yaxis = list(title = 'Recoveries'))
+  if(input$cumulative == "Yes"){
+    for (i in Cs2plot) {
+      fig <- fig %>% add_trace(x = dataReactiveRecovered.2()$Date, y = log(dataReactiveRecovered.2()[[i]]), name = i, mode = "line", type = "scatter")
+    }
+  }else{
+    for (i in Cs2plot) {
+      fig <- fig %>% add_trace(x = dataReactiveRecovered.2()$Date, y = dataReactiveRecovered.2()[[i]], name = i, mode = "line", type = "scatter")
+    }
+  }
+
+  fig
+})
+```
+
+
+### **Cases and Mortality by Country**
+
+```{r}
+df <- reactive({
+  df1 <- confirmed %>% 
+    filter(Country.Region %in% input$countrySelect) %>%
+    select(c("Country.Region", as.character(lastDate)))
+  
+  df2 <- death %>% 
+    filter(Country.Region %in% input$countrySelect) %>%
+    select(c("Country.Region", as.character(lastDate)))
+  
+  colnames(df1)[colnames(df1)==as.character(lastDate)] <- "Confirmed"
+  
+  df <- merge(df1, df2, by = "Country.Region")
+  
+  colnames(df) <- c("Country", "Confirmed", "Deaths")
+  
+  df$'Case-Fatality' <- percent(df$Deaths/df$Confirmed, accuracy = 0.1, justify = "centre")
+  
+  return(df)
+  
+})
+
+renderDataTable({
+  df()
+},
+  options = list(
+  autoWidth = TRUE,
+  columnDefs = list(list(className = 'dt-center',width = '20%', targets = "_all"))
+))
+```
+
+
+Vaccination
+=====================
+
+Inputs {.sidebar data-padding=10}
+---------------------
+
+#### **Country** 
+
+```{r vaccine_Country}
+  selectInput("singleCountry",
+            "Country:",
+            choices = sort(unique(confirmed$Country.Region)),
+            selectize = F,
+            selected = "Ireland"
+            )
+
+```
+
+Row
+---------------------
+
+###
+
+```{r}
+renderValueBox({
+  totalVaccine <- sum(colSums(vaccineDose[2]))
+  valueBox("Total Number of Vaccine Administered", value = prettyNum(totalVaccine ,big.mark = ","), color = "#006800",icon = "fa-syringe")
+})
+```
+
+
+###
+
+```{r}
+renderValueBox({
+  firstDose <- sum(colSums(vaccineDose[3]))
+  valueBox("Total Number of First Doses", value = prettyNum(firstDose, big.mark = ","), color = "#FFD505",icon = "fa-syringe")
+})
+```
+
+###
+
+```{r}
+renderValueBox({
+  SecondDose <- sum(colSums(vaccineDose[4]))
+  valueBox("Total Number of Second Doses", value = prettyNum(SecondDose ,big.mark = ",") , color = "#00A800",icon = "fa-syringe")
+})
+```
+
+
+Row
+---------------------
+
+###
+
+```{r}
+renderValueBox({
+  totalVaccine <- sum(colSums(dataReactiveVaccineDose.2()[2]))
+  valueBox(paste0("Total Number of Vaccine Administered ( ",input$singleCountry," )"), value = prettyNum(totalVaccine ,big.mark = ","), color = "#006800",icon = "fa-syringe")
+})
+```
+
+
+###
+
+```{r}
+renderValueBox({
+  firstDose <- sum(colSums(dataReactiveVaccineDose.2()[3]))
+  valueBox(paste0("Total Number of First Doses( ",input$singleCountry," )"), value = prettyNum(firstDose, big.mark = ","), color = "#FFD505",icon = "fa-syringe")
+})
+```
+
+###
+
+```{r}
+renderValueBox({
+  SecondDose <- sum(colSums(dataReactiveVaccineDose.2()[4]))
+  valueBox(paste0("Total Number of Second Doses( ",input$singleCountry," )"), value = prettyNum(SecondDose ,big.mark = ",") , color = "#00A800",icon = "fa-syringe")
+})
+```
+
+
+Row {.tabset .tabset-fade}
+--------------------------
+
+
+### **Vaccines Administered Global**
+
+
+```{r}
+renderPlotly({
+  gVaccineData <- aggregate(.~Date, vaccinated[-c(1,2,7,8,9)],sum)
+  fig <- plot_ly(y=~gVaccineData$Doses_admin, x=~as.Date(gVaccineData$Date), type = "scatter", mode = "lines", fill="tozeroy", name = "Total")
+  fig <- fig%>% add_trace(y=~gVaccineData$People_partially_vaccinated, x=~as.Date(gVaccineData$Date),  fill="tozeroy", name = "First Dose")
+    fig <- fig%>% add_trace(y=~gVaccineData$People_fully_vaccinated, x=~as.Date(gVaccineData$Date),  fill="tozeroy", name = "Complete Dose")
+  fig <- fig %>% layout(xaxis = list(title = 'Date'),
+         yaxis = list(title = 'Vaccines Administered'))
+})
+```
+
+
+### **Vaccines Administered by Country**
+
+
+```{r}
+
+
+renderPlotly({
+  fig <- plot_ly(y=~dataReactiveVaccines()$Doses_admin, x=~as.Date(dataReactiveVaccines()$Date), type = "scatter", mode = "lines", fill="tozeroy", name = "Total")
+  fig <- fig%>% add_trace(y=~dataReactiveVaccines()$People_partially_vaccinated, x=~as.Date(dataReactiveVaccines()$Date),  fill="tozeroy", name = "First Dose")
+    fig <- fig%>% add_trace(y=~dataReactiveVaccines()$People_fully_vaccinated, x=~as.Date(dataReactiveVaccines()$Date),  fill="tozeroy", name = "Complete Dose")
+  fig <- fig %>% layout(xaxis = list(title = 'Date'),
+         yaxis = list(title = 'Vaccines Administered'))
+})
+```
+
+Map
+=====================
+
+Inputs {.sidebar data-padding=10}
+---------------------
+
+```{r}
+radioButtons(
+  "map",
+  "",
+  choices = c("Confirmed Cases","Deaths", "Recoveries", "Vaccination (Total Doses)", "Vaccination (First Dose)","Vaccination (Complete Dose)"),
+  selected = "Confirmed Cases",
+  inline =F
+)
+```
+
+Row {data-height=1000}
+-------------------------------------
+```{r}
+renderPlotly({
+  if(input$map == "Confirmed Cases"){
+    fig <- plot_geo(mapDataCases, type='choropleth', locations=mapDataCases$iso3, z=mapDataCases$Confirmed, text=mapDataCases$Country, colors="Purples") %>% 
+   layout(title = paste0("<br> <br> World map showing no. of <br>",input$map)) %>% 
+    colorbar(title = paste0("No. of ",input$map))
+  }else if(input$map == "Deaths"){
+    fig <- plot_geo(mapDataCases, type='choropleth', locations=mapDataCases$iso3, z=mapDataCases$Deaths, text=mapDataCases$Country, colorscale="Inferno") %>% 
+   layout(title = paste0("<br> <br> World map showing no. of <br>",input$map)) %>% 
+    colorbar(title = paste0("No. of ",input$map))
+  }else if(input$map == "Recoveries"){
+    fig <- plot_geo(mapDataCases, type='choropleth', locations=mapDataCases$iso3, z=mapDataCases$Recovered, text=mapDataCases$Country, colors="YlGn") %>% 
+   layout(title = paste0("<br> <br> World map showing no. of <br>",input$map)) %>% 
+    colorbar(title = paste0("No. of ",input$map))
+  }else if(input$map == "Vaccination (Total Doses)"){
+    fig <- plot_geo(mapDataVaccines, type='choropleth', locations=mapDataVaccines$iso3, z=mapDataVaccines$Doses_admin, text=mapDataVaccines$Country, colors="BuGn") %>% 
+   layout(title = paste0("<br> <br> World map showing no. of <br>",input$map)) %>% 
+    colorbar(title = paste0("No. of ",input$map))
+  }else if(input$map == "Vaccination (First Dose)"){
+    fig <- plot_geo(mapDataVaccines, type='choropleth', locations=mapDataVaccines$iso3, z=mapDataVaccines$People_partially_vaccinated, text=mapDataVaccines$Country, colors="YlGn") %>% 
+   layout(title = paste0("<br> <br> World map showing no. of <br>",input$map)) %>% 
+    colorbar(title = paste0("No. of ",input$map))
+  }else{
+    fig <- plot_geo(mapDataVaccines, type='choropleth', locations=mapDataVaccines$iso3, z=mapDataVaccines$People_fully_vaccinated, text=mapDataVaccines$Country, colors="BuGn") %>% 
+   layout(title = paste0("<br> <br> World map showing no. of <br>",input$map)) %>% 
+    colorbar(title = paste0("No. of ",input$map))
+  }
+  #fig <- plot_geo(mapDataCases, type='choropleth', locations=mapDataCases$iso3, z=mapDataCases$Deaths, text=mapDataCases$Country, colorscale="Inferno")
+  fig <-fig %>% config(displayModeBar = F) %>% layout(height = 950)
+  fig
+})
+```
+
+
+
+
+Data Table
+=====================
+
+Inputs {.sidebar data-padding=10}
+---------------------
+
+#### **Note** 
+
+Oversea territories are listed under the main countries. e.g Saint Martin (South America) is under France hence, France will appear under Americas.
+
+#### **Countries** 
+
+```{r}
+uniqueRegions <- unique(countryRef$region)
+uniqueSubRegions <- unique(countryRef$sub.region)
+allCountries <- unique(countryRef$Country_Region)
+quickInputs <- c( "Ireland", "Global", "Top 20", uniqueRegions, uniqueSubRegions)
+selectInput("quickSelect2",
+          "Quick Selections:",
+          choices = quickInputs,
+          selectize = F,
+          selected = "Ireland"
+          )
+```
+
+```{r country_DT}
+
+topCountries.20 <- cbind(confirmed$Country.Region, confirmed[ncol(confirmed)], death[ncol(death)], recovered[ncol(recovered)])
+colnames(topCountries.20) <- c("Country", "confirmed", "death", "recovered")
+topCountries.20 <- topCountries.20[order(topCountries.20[,2], topCountries.20[,3], topCountries.20[,4], decreasing = T),]
+topCountries.20 <- topCountries.20[1:20,1]
+
+countryFlag2 <- reactive({
+  if(input$quickSelect2 == "Global"){
+    selectCountries <- sort(unique(confirmed$Country.Region))
+  }else if(input$quickSelect2 == "Ireland"){
+    selectCountries <- "Ireland"
+  }else if(input$quickSelect2 %in% unique(countryRef$region)){
+    selectCountries <- countryRef[which(countryRef$region %in% input$quickSelect2), "Country_Region"]
+  }else if (input$quickSelect2 %in% unique(countryRef$sub.region)){
+    selectCountries <- countryRef[which(countryRef$sub.region %in% input$quickSelect2), "Country_Region"]
+  }else if(input$quickSelect2 == "Top 20"){
+    selectCountries <- topCountries.20
+  }else{
+    selectCountries <- "Ireland"
+  }
+  return(selectCountries)
+})
+
+renderUI({
+  selectInput("countrySelect2",
+            "Countries:",
+            choices = sort(unique(confirmed$Country.Region)),
+            multiple = T,
+            selectize = T,
+            selected = countryFlag2()
+            )
+})
+
+```
+
+
+
+Row {.tabset .tabset-fade}
+--------------------------
+
+### **Confirmed Cases**
+
+```{r}
+renderDataTable({
+  dataReactiveConfirmedDT()
+})
+```
+
+### **Deaths**
+
+```{r}
+renderDataTable({
+  dataReactiveDeathDT()
+})
+```
+
+### **Recoveries**
+
+```{r}
+renderDataTable({
+  dataReactiveRecoveredDT()
+})
+```
+
+### **Vaccination**
+
+```{r}
+renderDataTable({
+  dataReactiveVaccineDoseDT()
+})
+```
+
+
+
+
+About
+=====================
+
+Row
+--------------------------
+
+### {data-padding=50}
+
+#### **Dataset**
+
+
+The information presented on this app changes at least once a day based on the updates from the data sources (See below). Many excellent COVID logistics tools are available online, including those run by the [WHO](https://experience.arcgis.com/experience/685d0ace521648f8a5beeeee1b9125cd) and [Johns Hopkins University](https://gisanddata.maps.arcgis.com/apps/opsdashboard/index.html#/bda7594740fd40299423467b48e9ecf6).This work aims to accompany these excellent resources with the inclusion of vaccine data to get insights about How many are infected with this virus and how’s the vaccinated drive going on in different parts of the world, including the timeline function and the ability to get the daily cases added.
+
+
+***
+
+#### **Background**
+In December 2019, various severe cases of respiratory illness were reported in the city of Wuhan in China. It emerged as a new type of virus called severe acute respiratory syndrome coronavirus 2 (SARS-CoV-2) commonly referred to as coronavirus or COVID-19. It soon spread across China's borders in mid-January 2020. A year and a half later, millions of cases and deaths worldwide, and the virus is still evolving.
+
+Some of the questions set out to be answered by the information on this app are:
+
+1. What’s the current rate of this outbreak? 
+2. Are the efforts of controlling the spread working? 
+3. Is the vaccine drive helpful in decreasing the rate?
+
+
+***
+
+#### **Data Sources**
+
+1) Covid-19 cases: [Johns Hopkins University Center for Systems Science and Engineering (JHU CSSE).](https://github.com/CSSEGISandData/COVID-19)
+
+2) Vaccines data: [Johns Hopkins Applied Physics Laboratory, Sheridan Libraries, the Center for Systems Science and Engineering in the Whiting School of Engineering, and the Esri Living Atlas Team. Expert insights are provided by epidemiologists, vaccinologists, and clinical practitioners from Johns Hopkins Medicine and the Center for Health Security in the Bloomberg School of Public Health.](https://github.com/govex/COVID-19)
+
+***
+
+#### **Authors**
+Uche Mbaka (uche.mbaka@ucdconnect.ie), 1st year PhD Student in University College Dublin(UCD), Ireland.\
+Sajal Kaur Minhas (sajal.minhas@ucdconnect.ie), 2nd year PhD Student in University College Dublin(UCD), Ireland.
+
+***
+
+#### **Code**
+The code to this Shiny app 'Covid- 19 Tracker' is available on GitHub.

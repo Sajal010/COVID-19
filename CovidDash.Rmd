@@ -260,13 +260,13 @@ Row
 
 **Welcome to the 'Covid-19 Tracker' App**
 
-1. **The app consists of 3 data visualization pages (Covid Infection, Vaccination and Map) and 1 data table page **
+1. **The app consists of 3 data visualization pages (Covid Infection, Vaccination and Map) and 1 data table page. **
 
 2. **In the ‘Covid Infections’ tab, tracked data related to selected country/countries like number of confirmed cases/recoveries/fatalities are shown. Also, graphs of daily confirmed cases/fatalities/recoveries, cumulative confirmed cases/fatalities/recoveries and cases/mortality by country can be seen.**
 
-3. **The "Quick Selections" dropdown menu present in Covid Infection and Data Table tabs, allow for easy selection of countries based on region or sub-region (See notes in both pages)**
+3. **The "Quick Selections" dropdown menu present in Covid Infection and Data Table tabs, allow for easy selection of countries based on region or sub-region (See notes in both pages).**
 
-4. **Similarly, for the ‘Vaccination’ tab you can get the logistics globally or for the selected country** 
+4. **Similarly, for the ‘Vaccination’ tab you can get the logistics globally or for the selected country.** 
 
 5. **In the ‘Map’ tab, the world map will show logistics for confirmed cases, recovered cases, deaths, total vaccinated/first dose/second dose people for most countries in the world.**
 
@@ -373,7 +373,7 @@ checkboxGroupInput("yearCheckBox",
 Data reported are subject to countries specific testing policy and capacity.
 Changes in reporting policy and/or lack of data can cause unusual spikes in plot. Examples include:
 
-1) The US stopped reporting data of recovered cases from 13th December 2020
+1) The US stopped reporting data of recovered cases from 13th December 2020.
 2) Ireland stopped reporting daily data due to health department (HSE) hack.
 
 

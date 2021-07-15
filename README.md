@@ -5,13 +5,13 @@
 #### **Dataset**
 
 
-The information presented on this app changes at least once a day based on the updates from the data sources (See below). Many excellent COVID logistics tools are available online, including those run by the [WHO](https://experience.arcgis.com/experience/685d0ace521648f8a5beeeee1b9125cd) and [Johns Hopkins University](https://gisanddata.maps.arcgis.com/apps/opsdashboard/index.html#/bda7594740fd40299423467b48e9ecf6).This work aims to accompany these excellent resources with the inclusion of vaccine data to get insights about How many are infected with this virus and how’s the vaccinated drive going on in different parts of the world, including the timeline function and the ability to get the daily cases added.
+The information presented on this app is updated daily from the data sources (See below). Many excellent COVID logistics tools are available online, including those run by the [WHO](https://experience.arcgis.com/experience/685d0ace521648f8a5beeeee1b9125cd) and [Johns Hopkins University](https://gisanddata.maps.arcgis.com/apps/opsdashboard/index.html#/bda7594740fd40299423467b48e9ecf6).This work aims to accompany these excellent resources with the inclusion of vaccination data to get insights about the current infection rate and how the vaccination drive is going in different parts of the world, including the timeline function and the ability to add daily cases.
 
 
 ***
 
 #### **Background**
-In December 2019, various severe cases of respiratory illness were reported in the city of Wuhan in China. It emerged as a new type of virus called severe acute respiratory syndrome coronavirus 2 (SARS-CoV-2) commonly referred to as coronavirus or COVID-19. It soon spread across China's borders in mid-January 2020. A year and a half later, millions of cases and deaths worldwide, and the virus is still evolving.
+In December 2019, various severe cases of respiratory illness were reported in the city of Wuhan in China. It emerged as a new type of virus called severe acute respiratory syndrome coronavirus 2 (SARS-CoV-2) commonly referred to as coronavirus or COVID-19. It soon spread beyond China's borders in mid-January 2020. A year and a half later, millions of cases and deaths worldwide, and the virus is still evolving.
 
 Some of the questions set out to be answered by the information on this app are:
 

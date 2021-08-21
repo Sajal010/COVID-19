@@ -17,6 +17,9 @@ library(DT)
 library(wordcloud)
 library(RColorBrewer)
 library(scales)
+library(gganimate)
+library(hrbrthemes)
+library(zoo)
 pdf(NULL)
 ```
 
@@ -88,38 +91,45 @@ if( c("Province.State", "Lat", "Long") %!in% colnames(death[1:10]) ){
   data <- oldData
 }
 
-death <- within(death, rm(X, Province.State, Lat, Long))
-confirmed <- within(confirmed, rm(X, Province.State, Lat, Long))
-recovered <- within(recovered, rm(X, Province.State, Lat, Long))
-vaccinated <- within(vaccinated, rm(Report_Date_String,UID, Province_State))
-vaccineDose <- within(vaccineDose, rm(Report_Date_String, Date, UID, Province_State))
-countryRef2 <- countryRef[, c("iso3", "Country_Region","Population")]
-countryRef2 <-subset(countryRef, iso3 != "")
 
-death <- aggregate(.~Country.Region, death, sum) # sum cases by country
-confirmed <- aggregate(.~Country.Region, confirmed, sum) 
-recovered <- aggregate(.~Country.Region, recovered, sum)
-vaccineDose <- aggregate(.~Country_Region, vaccineDose, sum)
-countryRef2 <- aggregate(Population~Country_Region, countryRef, sum)
+casesData <- function(caseType = death){
+  descCase <- within(caseType, rm(X, Province.State, Lat, Long))
+  descCase <- aggregate(.~Country.Region, descCase, sum)
+  return(descCase)
+}
+
+death <- casesData(); confirmed <- casesData(confirmed); recovered <- casesData(recovered)
+
+vaccinated <- subset(vaccinated, Province_State == "")
+vaccinated <- within(vaccinated, rm(Report_Date_String,UID, Province_State))
+vaccineDose <- subset(vaccineDose, Province_State == "")
+vaccineDose <- within(vaccineDose, rm(Report_Date_String, Date, UID, Province_State))
+
+ref = countryRef2; ref2 = countryRef
+adminLevel.0 <- ref[which(ref$Combined_Key %in% ref$Country_Region),]
+ref2 <- ref2[which(ref2$Combined_Key %in% ref2$Country_Region),]
+adminLevel.0 <- merge(adminLevel.0, ref2[c("iso3", "region")], by="iso3", all.x = T, all.y = F)
 
 colnames(death) <- colnames(confirmed) <- colnames(recovered) <- c("Country.Region",as.character(as.Date(str_replace(colnames(death[-1]),"X",""), "%m.%d.%y")))
-
-
 lastDate <- as.Date(names(confirmed[ncol(confirmed)]))
 
+recoveredFlag <- subset(recovered, Country.Region == "Ireland")
+
 mapDataCases <- cbind(confirmed$Country.Region, confirmed[as.character(lastDate)],
-                      death[as.character(lastDate)], recovered[as.character(lastDate)])
+                      death[as.character(lastDate)], recovered[ifelse(recoveredFlag[1,ncol(recoveredFlag)] == 0, "2021-08-04",as.character(lastDate))])
 colnames(mapDataCases) <- c("Country", "Confirmed", "Deaths", "Recovered")
-mapDataCases <- merge(mapDataCases, countryRef2, by.x = "Country", by.y = "Country_Region")
-iso <- countryRef[c("iso3", "Country_Region")]; iso <- iso[!duplicated(iso),]
-mapDataCases <- merge(mapDataCases, iso, by.x = "Country", by.y = "Country_Region")
+mapDataCases <- merge(mapDataCases, adminLevel.0[c("Country_Region", "region", "Population")], by.x = "Country", by.y = "Country_Region", all.x = T, all.y = F)
+mapDataCases <- unique(mapDataCases)
+iso <- adminLevel.0[c("iso3", "Country_Region")]; iso <- unique(iso)
+mapDataCases <- merge(mapDataCases, iso, by.x = "Country", by.y = "Country_Region", all.x = T, all.y = F)
 mapDataCases <- subset(mapDataCases, iso3 != "")
 
 mapDataVaccines <- vaccineDose
-mapDataVaccines <- merge(mapDataVaccines, countryRef2, by = "Country_Region")
-isoV <- countryRef[c("iso3", "Country_Region")]; isoV<- isoV[!duplicated(isoV),]
-mapDataVaccines <- merge(mapDataVaccines, isoV, by = "Country_Region")
-mapDataVaccines <- subset(mapDataVaccines, iso3 != "")
+mapDataVaccines <- merge(mapDataVaccines, adminLevel.0[c("Country_Region", "region", "Population")], by="Country_Region", all.x = T, all.y = F)
+mapDataVaccines <- merge(mapDataVaccines, iso, by = "Country_Region", all.x = T, all.y = F)
+
+# Check recovery is still missing
+if(recoveredFlag[1,ncol(recoveredFlag)] == 0) recovered <- recovered[1:which(colnames(recovered) =="2021-08-04")]
 
 getDaily <- function(data = death, country="Global"){
   tData <-data.frame(t(data[-1]))
@@ -168,30 +178,30 @@ dataReactiveConfirmed.1 <- reactive({
 
 dataReactiveDeath.2 <- reactive({
   df <- getDaily(data = death) %>% 
-    filter(year %in% input$yearCheckBox) %>%
-
     select(c("Date", "year", "month", input$countrySelect)) %>%
     mutate(Global = rowSums(select(., input$countrySelect))) %>%
-    mutate(DailyCount = c(Global[1], diff(Global)) )
+    mutate(DailyCount = c(Global[1], diff(Global)) )%>%
+    filter(year %in% input$yearCheckBox)   
   return(df)
 })
 
 
 dataReactiveRecovered.2 <- reactive({
   df <- getDaily(data = recovered) %>% 
-    filter(year %in% input$yearCheckBox) %>%
     select(c("Date", "year", "month", input$countrySelect)) %>%
     mutate(Global = rowSums(select(., input$countrySelect))) %>%
-    mutate(DailyCount = c(Global[1], diff(Global)) )
+    mutate(DailyCount = c(Global[1], diff(Global)) ) %>%
+    filter(year %in% input$yearCheckBox)
   return(df)
 })
 
 dataReactiveConfirmed.2 <- reactive({
   df <- getDaily(data = confirmed) %>% 
-    filter(year %in% input$yearCheckBox) %>%
+    
     select(c("Date", "year", "month", input$countrySelect)) %>%
     mutate(Global = rowSums(select(., input$countrySelect))) %>%
-    mutate(DailyCount = c(Global[1], diff(Global)) )
+    mutate(DailyCount = c(Global[1], diff(Global)) )%>%
+    filter(year %in% input$yearCheckBox) 
   return(df)
 })
 
@@ -294,15 +304,15 @@ Inputs {.sidebar data-padding=10}
 
 #### **Note** 
 
-Oversea territories are listed under the main countries. e.g Saint Martin (South America) is under France hence, France will appear under Americas.
+Administration level is set at 0 hence, data for a particular country include it's oversea territory(ies). e.g Saint Martin (South America) is under France therefore, The data for France include those from Saint Martin and all its other territories.
 
 #### **Countries** 
 
 ```{r}
-uniqueRegions <- unique(countryRef$region)
-uniqueSubRegions <- unique(countryRef$sub.region)
-allCountries <- unique(countryRef$Country_Region)
-quickInputs <- c( "Ireland", "Global", "Top 20", uniqueRegions, uniqueSubRegions)
+
+uniqueRegions <- unique(na.omit(adminLevel.0$region))
+allCountries <- unique(adminLevel.0$Country_Region)
+quickInputs <- c( "Ireland", "Global", "Top 20", uniqueRegions)
 selectInput("quickSelect",
           "Quick Selections:",
           choices = quickInputs,
@@ -323,10 +333,8 @@ countryFlag <- reactive({
     selectCountries <- sort(unique(confirmed$Country.Region))
   }else if(input$quickSelect == "Ireland"){
     selectCountries <- "Ireland"
-  }else if(input$quickSelect %in% unique(countryRef$region)){
-    selectCountries <- countryRef[which(countryRef$region %in% input$quickSelect), "Country_Region"]
-  }else if (input$quickSelect %in% unique(countryRef$sub.region)){
-    selectCountries <- countryRef[which(countryRef$sub.region %in% input$quickSelect), "Country_Region"]
+  }else if(input$quickSelect %in% uniqueRegions){
+    selectCountries <- adminLevel.0[which(adminLevel.0$region %in% input$quickSelect), "Country_Region"]
   }else if(input$quickSelect == "Top 20"){
     selectCountries <- topCountries.20
   }else{
@@ -383,6 +391,7 @@ Changes in reporting policy and/or lack of data can cause unusual spikes in plot
 1) The US stopped reporting data of recovered cases from 13th December 2020
 2) Ireland stopped reporting daily data due to health department (HSE) hack.
 
+Data on recovery may not be up to date (last reported data from data source **maybe** 04/08/2021)
 
 Row 
 ---------------------
@@ -489,7 +498,7 @@ renderPlotly({
   
   fig <- plot_ly(y=~dataReactiveConfirmed.2()$DailyCount, x=~dataReactiveConfirmed.2()$Date, type = "scatter", mode = "lines", fill="tozeroy")
   fig <- fig %>% layout(xaxis = list(title = 'Date'),
-           yaxis = list(title = 'Deaths'))
+           yaxis = list(title = 'Confirmed Cases'))
   
 })
 ```
@@ -641,7 +650,7 @@ Row
 
 ```{r}
 renderValueBox({
-  totalVaccine <- sum(colSums(vaccineDose[2]))
+  totalVaccine <- subset(vaccineDose, Country_Region == "World")[2]#
   valueBox("Total Number of Vaccine Administered (Global)", value = prettyNum(totalVaccine ,big.mark = ","), color = "#006800",icon = "fa-syringe")
 })
 ```
@@ -651,7 +660,7 @@ renderValueBox({
 
 ```{r}
 renderValueBox({
-  firstDose <- sum(colSums(vaccineDose[3]))
+  firstDose <- subset(vaccineDose, Country_Region == "World")[3]#sum(colSums(vaccineDose[3], na.rm = T))
   valueBox("Total Number of First Doses (Global)", value = prettyNum(firstDose, big.mark = ","), color = "#FFD505",icon = "fa-syringe")
 })
 ```
@@ -660,7 +669,7 @@ renderValueBox({
 
 ```{r}
 renderValueBox({
-  SecondDose <- sum(colSums(vaccineDose[4]))
+  SecondDose <- subset(vaccineDose, Country_Region == "World")[4]#sum(colSums(vaccineDose[4], na.rm = T))
   valueBox("Total Number of Second Doses (Global)", value = prettyNum(SecondDose ,big.mark = ",") , color = "#00A800",icon = "fa-syringe")
 })
 ```
@@ -707,10 +716,10 @@ Row {.tabset .tabset-fade}
 
 ```{r}
 renderPlotly({
-  gVaccineData <- aggregate(.~Date, vaccinated[-1],sum)
-  fig <- plot_ly(y=~gVaccineData$Doses_admin, x=~as.Date(gVaccineData$Date), type = "scatter", mode = "lines", fill="tozeroy", name = "Total")
-  fig <- fig%>% add_trace(y=~gVaccineData$People_partially_vaccinated, x=~as.Date(gVaccineData$Date),  fill="tozeroy", name = "First Dose")
-    fig <- fig%>% add_trace(y=~gVaccineData$People_fully_vaccinated, x=~as.Date(gVaccineData$Date),  fill="tozeroy", name = "Complete Dose")
+  gVaccineData <- subset(vaccinated, Country_Region == "World")
+  fig <- plot_ly(y=~gVaccineData$Doses_admin, x=~as.Date(gVaccineData$Date, tryFormats = c("%Y-%m-%d", "%Y/%m/%d","%d/%m/%Y","%m/%d/%Y")), type = "scatter", mode = "lines", fill="tozeroy", name = "Total")
+  fig <- fig%>% add_trace(y=~gVaccineData$People_partially_vaccinated, x=~as.Date(gVaccineData$Date, tryFormats = c("%Y-%m-%d", "%Y/%m/%d","%d/%m/%Y","%m/%d/%Y")),  fill="tozeroy", name = "First Dose")
+    fig <- fig%>% add_trace(y=~gVaccineData$People_fully_vaccinated, x=~as.Date(gVaccineData$Date, tryFormats = c("%Y-%m-%d", "%Y/%m/%d","%d/%m/%Y","%m/%d/%Y")),  fill="tozeroy", name = "Complete Dose")
   fig <- fig %>% layout(xaxis = list(title = 'Date'),
          yaxis = list(title = 'Vaccines Administered'))
 })
@@ -724,9 +733,9 @@ renderPlotly({
 
 
 renderPlotly({
-  fig <- plot_ly(y=~dataReactiveVaccines()$Doses_admin, x=~as.Date(dataReactiveVaccines()$Date), type = "scatter", mode = "lines", fill="tozeroy", name = "Total")
-  fig <- fig%>% add_trace(y=~dataReactiveVaccines()$People_partially_vaccinated, x=~as.Date(dataReactiveVaccines()$Date),  fill="tozeroy", name = "First Dose")
-    fig <- fig%>% add_trace(y=~dataReactiveVaccines()$People_fully_vaccinated, x=~as.Date(dataReactiveVaccines()$Date),  fill="tozeroy", name = "Complete Dose")
+  fig <- plot_ly(y=~dataReactiveVaccines()$Doses_admin, x=~as.Date(dataReactiveVaccines()$Date, tryFormats = c("%Y-%m-%d", "%Y/%m/%d","%d/%m/%Y","%m/%d/%Y")), type = "scatter", mode = "lines", fill="tozeroy", name = "Total")
+  fig <- fig%>% add_trace(y=~dataReactiveVaccines()$People_partially_vaccinated, x=~as.Date(dataReactiveVaccines()$Date, tryFormats = c("%Y-%m-%d", "%Y/%m/%d","%d/%m/%Y","%m/%d/%Y")),  fill="tozeroy", name = "First Dose")
+    fig <- fig%>% add_trace(y=~dataReactiveVaccines()$People_fully_vaccinated, x=~as.Date(dataReactiveVaccines()$Date, tryFormats = c("%Y-%m-%d", "%Y/%m/%d","%d/%m/%Y","%m/%d/%Y")),  fill="tozeroy", name = "Complete Dose")
   fig <- fig %>% layout(xaxis = list(title = 'Date'),
          yaxis = list(title = 'Vaccines Administered'))
 })
@@ -752,12 +761,16 @@ radioButtons(
 ```{r}
 radioButtons(
   "population",
-  "percentage by Population:",
+  "Percentage by Population:",
   choices = c("Yes","No"),
   selected = "No",
   inline = T
 )
 ```
+
+#### **Note** 
+
+Total vaccination fixed at counts even when percentage by population is set to yes.
 
 Row
 -------------------------------------
@@ -803,8 +816,7 @@ renderPlotly({
     else zVal <- mapDataCases$Recovered
     fig <- plot_geo(mapDataCases, type='choropleth', locations=mapDataCases$iso3, z=zVal, text=mapDataCases$Country, colors="YlGn")
   }else if(input$map == "Vaccination (Total Doses)"){
-    if(input$population == "Yes")  zVal <- round((mapDataVaccines$Doses_admin/mapDataVaccines$Population)*100,1)
-    else zVal <- mapDataVaccines$Doses_admin
+    zVal <- mapDataVaccines$Doses_admin
     fig <- plot_geo(mapDataVaccines, type='choropleth', locations=mapDataVaccines$iso3, z=zVal, text=mapDataVaccines$Country, colors="BuGn")
   }else if(input$map == "Vaccination (First Dose)"){
     if(input$population == "Yes")  zVal <- round((mapDataVaccines$People_partially_vaccinate/mapDataVaccines$Population)*100,1)
@@ -826,6 +838,12 @@ renderPlotly({
 
 
 
+ 
+
+
+
+
+
 Data Table
 =====================
 
@@ -834,15 +852,14 @@ Inputs {.sidebar data-padding=10}
 
 #### **Note** 
 
-Oversea territories are listed under the main countries. e.g Saint Martin (South America) is under France hence, France will appear under Americas.
+Administration level is set at 0 hence, data for a particular country include it's oversea territory(ies). e.g Saint Martin (South America) is under France hence, France data include those from Saint Martin and all its other territories.
 
 #### **Countries** 
 
 ```{r}
-uniqueRegions <- unique(countryRef$region)
-uniqueSubRegions <- unique(countryRef$sub.region)
-allCountries <- unique(countryRef$Country_Region)
-quickInputs <- c( "Ireland", "Global", "Top 20", uniqueRegions, uniqueSubRegions)
+uniqueRegions <- unique(na.omit(adminLevel.0$region))
+allCountries <- unique(adminLevel.0$Country_Region)
+quickInputs <- c( "Ireland", "Global", "Top 20", uniqueRegions)
 selectInput("quickSelect2",
           "Quick Selections:",
           choices = quickInputs,
@@ -863,10 +880,8 @@ countryFlag2 <- reactive({
     selectCountries <- sort(unique(confirmed$Country.Region))
   }else if(input$quickSelect2 == "Ireland"){
     selectCountries <- "Ireland"
-  }else if(input$quickSelect2 %in% unique(countryRef$region)){
-    selectCountries <- countryRef[which(countryRef$region %in% input$quickSelect2), "Country_Region"]
-  }else if (input$quickSelect2 %in% unique(countryRef$sub.region)){
-    selectCountries <- countryRef[which(countryRef$sub.region %in% input$quickSelect2), "Country_Region"]
+  }else if(input$quickSelect2 %in% unique(adminLevel.0$region)){
+    selectCountries <- adminLevel.0[which(adminLevel.0$region %in% input$quickSelect2), "Country_Region"]
   }else if(input$quickSelect2 == "Top 20"){
     selectCountries <- topCountries.20
   }else{
